@@ -23,7 +23,6 @@ redis_client = async_redis.Redis(
 )
 
 
-
 async def get_str_cache(key: str):
     try:
         return await redis_client.get(key)
