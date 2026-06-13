@@ -1,3 +1,5 @@
+from datetime import datetime
+
 from pydantic import BaseModel, Field, ConfigDict
 
 from schemas.base import NewsItemBase
@@ -12,8 +14,8 @@ class HistoryAddRequest(BaseModel):
 
 
 class HistoryNewsItemResponse(NewsItemBase):
-    history_id: int = Field(..., description="收藏ID", alias='historyId')
-    view_time: int = Field(..., description="查看时间", alias='viewTime')
+    history_id: int = Field(..., description="历史记录ID", alias='historyId')
+    view_time: datetime = Field(..., description="查看时间", alias='viewTime')
     model_config = ConfigDict(
         from_attributes=True,
         populate_by_name=True
