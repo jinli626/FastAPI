@@ -1,0 +1,25 @@
+# Python 缓存文件
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+
+# 虚拟环境
+.venv/
+venv/
+
+# IDE 配置文件
+.idea/
+.vscode/
+
+# 日志文件
+*.log
+logs/
+
+# 临时文件
+*.tmp
+*.bak
+
+# 环境变量文件（防止密钥泄露）
+.env
+.env.*
