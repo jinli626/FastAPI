@@ -12,8 +12,10 @@ redis_client = async_redis.Redis(
     host=REDIS_HOST,
     port=REDIS_PORT,
     password=REDIS_PASSWORD,
-    db=REDIS_DB
+    db=REDIS_DB,
+    decode_responses=True  # 让 get() 返回 str 而非 bytes，否则与字符串比较恒为 False
 )
+
 
 
 async def get_str_cache(key: str):
