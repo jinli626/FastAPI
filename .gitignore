@@ -28,3 +28,6 @@ logs/
 
 # 忽略临时测试文件
 test.py
+
+# 忽略所有 npm 依赖包
+node_modules/
