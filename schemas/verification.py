@@ -19,7 +19,7 @@ class VerifyCodeRequest(BaseModel):
 
 
 class ResetPasswordRequest(BaseModel):
-    reset_token: str = Field(..., max_length=100, description='验证通过后获取的重置token')
+    reset_token: str = Field(..., max_length=100, description='验证通过后获取的重置token', alias='resetToken')
     new_password: str = Field(..., min_length=6, max_length=255, description='新密码', alias='newPassword')
     model_config = ConfigDict(
         populate_by_name=True
