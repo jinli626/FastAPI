@@ -53,6 +53,11 @@
       <van-form v-if="step === 2" @submit="onVerifyCode" class="forgot-form">
         <van-cell-group inset>
           <van-field
+            v-model="contact"
+            label="手机号/邮箱"
+            readonly
+          />
+          <van-field
             v-model="code"
             name="code"
             label="验证码"
@@ -176,7 +181,7 @@ const onSendCode = async () => {
 
   sending.value = true
   try {
-    const res = await axios.post(`${apiConfig.baseURL}/api/user/send-code`, {
+    const res = await axios.post(`${apiConfig.baseURL}/api/user/send_code`, {
       contact: contact.value,
       captchaId: captchaId.value,
       captchaCode: captchaCode.value
@@ -221,7 +226,7 @@ const onVerifyCode = async () => {
 
   verifying.value = true
   try {
-    const res = await axios.post(`${apiConfig.baseURL}/api/user/verify-code`, {
+    const res = await axios.post(`${apiConfig.baseURL}/api/user/verify_code`, {
       contact: contact.value,
       code: code.value
     })
@@ -255,7 +260,7 @@ const onResetPassword = async () => {
 
   resetting.value = true
   try {
-    const res = await axios.put(`${apiConfig.baseURL}/api/user/reset-password`, {
+    const res = await axios.put(`${apiConfig.baseURL}/api/user/reset_password`, {
       resetToken: resetToken.value,
       newPassword: newPassword.value
     })
