@@ -1,6 +1,6 @@
 import re
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, BackgroundTasks
 from sqlalchemy.ext.asyncio import AsyncSession
 from starlette import status
 
@@ -80,7 +80,11 @@ async def get_captcha():
 
 
 @router.post("/send_code")
-async def send_verify_code(data: SendCodeRequest, db: AsyncSession = Depends(get_db)):
+async def send_verify_code(
+    data: SendCodeRequest,
+    background_tasks: BackgroundTasks,
+    db: AsyncSession = Depends(get_db)
+):
     if not await verify_captcha(data.captcha_id, data.captcha_code):
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="图形验证码错误")
 
@@ -99,13 +103,14 @@ async def send_verify_code(data: SendCodeRequest, db: AsyncSession = Depends(get
 
     code = generate_code()
     await store_verify_code(data.contact, code)
-
-    if is_email:
-        await send_email(data.contact, code)
-    else:
-        await send_sms(data.contact, code)
-
     await mark_send_code(data.contact)
+
+    # 发送为阻塞式网络调用，放到后台线程池执行，立即返回响应，避免前端长时间转圈
+    if is_email:
+        background_tasks.add_task(send_email, data.contact, code)
+    else:
+        background_tasks.add_task(send_sms, data.contact, code)
+
     return success_response(message="验证码已发送")
 
 
