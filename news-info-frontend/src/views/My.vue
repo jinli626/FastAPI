@@ -182,7 +182,7 @@ onMounted(async () => {
 
 .desc {
   font-size: 14px;
-  color: #999;
+  color: #fff;
 }
 
 .menu-list {

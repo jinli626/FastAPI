@@ -25,7 +25,7 @@
             v-model="contact"
             name="contact"
             label="手机号/邮箱"
-            :placeholder="isEmail ? '请输入邮箱地址' : '请输入手机号'"
+            placeholder="请输入手机号或邮箱"
             :rules="[{ required: true, message: '请输入手机号或邮箱' }]"
           />
           <van-field
@@ -33,7 +33,7 @@
             name="captchaCode"
             center
             label="验证码"
-            placeholder="请输入计算结果"
+            placeholder="请输入验证码"
             :rules="[{ required: true, message: '请输入验证码答案' }]"
           >
             <template #button>
