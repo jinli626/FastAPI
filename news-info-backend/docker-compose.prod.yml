@@ -1,0 +1,36 @@
+# 生产环境覆盖配置
+# 使用方式：
+#   docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d --build
+#
+# 与基础配置的区别：
+#   1. app 只绑定到 127.0.0.1，由宿主机 nginx 反向代理对外，不直接暴露公网
+#   2. mysql / redis 不对外暴露端口，只在内网（app-network）可达
+#   3. 三个服务都开启 json-file 日志轮转，避免日志撑爆磁盘
+
+services:
+  app:
+    ports:
+      - "127.0.0.1:${API_PORT:-8000}:8000"
+    environment:
+      - API_PORT=8000
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  mysql:
+    ports: []
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  redis:
+    ports: []
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "5m"
+        max-file: "2"

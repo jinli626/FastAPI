@@ -1,0 +1,52 @@
+# 本文件本身
+.dockerignore
+
+# Python 缓存
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+
+# 虚拟环境
+.venv/
+venv/
+env/
+ENV/
+
+# 开发工具配置
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# 日志与本地缓存
+logs/
+*.log
+cache/
+
+# 数据库 / 本地数据文件
+*.db
+*.sqlite3
+
+# 环境变量文件（密钥不进镜像，运行时用 env_file 注入）
+.env
+.env.local
+.env.*
+
+# 临时文件
+.DS_Store
+Thumbs.db
+
+# Git 相关
+.git/
+.gitignore
+
+# 文档（不需要进镜像）
+README.md
+部署说明.md
+
+# 本地测试脚本（含真实手机号/密钥，且被根 .gitignore 忽略）
+test.py
+
+# npm 依赖（前端目录若被一起拷贝时排除）
+node_modules/
