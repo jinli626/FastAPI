@@ -1,7 +1,7 @@
 from datetime import datetime
 from typing import Optional
 
-from sqlalchemy import Integer, String, DateTime, Index, Text, ForeignKey
+from sqlalchemy import Integer, String, DateTime, Index, Text, ForeignKey, Enum
 from sqlalchemy.orm import Mapped, mapped_column
 
 from models.base import Base
@@ -33,6 +33,8 @@ class News(Base):
     image: Mapped[Optional[str]] = mapped_column(String(255), comment='封面图片URL')
     author: Mapped[Optional[str]] = mapped_column(String(255), comment='作者')
     views: Mapped[int] = mapped_column(Integer, comment='浏览量', default=0, nullable=False)
+    status: Mapped[str] = mapped_column(Enum('draft', 'published', 'offline'), comment='状态：草稿/已发布/已下架',
+                                        default='published', nullable=False)
     category_id: Mapped[int] = mapped_column(Integer, ForeignKey('news_category.id'), comment='分类ID', nullable=False)
     publish_time: Mapped[datetime] = mapped_column(DateTime, default=datetime.now, comment='发布时间')
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.now, comment='创建时间')

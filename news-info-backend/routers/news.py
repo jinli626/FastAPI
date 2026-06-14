@@ -37,7 +37,7 @@ async def get_news_detail(
     db: AsyncSession = Depends(get_db)
 ):
     news_detail = await news.get_news_detail(db, news_id)
-    if not news_detail:
+    if not news_detail or news_detail.status != 'published':
         raise HTTPException(status_code=404, detail="新闻不存在")
 
     await news.increase_news_views(db, news_detail.id)

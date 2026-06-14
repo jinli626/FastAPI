@@ -31,3 +31,10 @@ async def invalidate_news_list_cache(category_id: int):
             await redis_client.delete(key)
     except Exception as e:
         print(f"清除新闻列表缓存失败：{e}")
+
+
+async def invalidate_categories_cache():
+    try:
+        await redis_client.delete(CATEGORIES_KEY)
+    except Exception as e:
+        print(f"清除分类缓存失败：{e}")

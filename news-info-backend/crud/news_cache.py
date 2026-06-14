@@ -29,7 +29,9 @@ async def get_news_list(db: AsyncSession, category_id: int, skip: int = 0, limit
     if cache_list:
         return [News(**item) for item in cache_list]
 
-    stmt = select(News).where(News.category_id == category_id).offset(skip).limit(limit)
+    stmt = select(News).where(
+        News.category_id == category_id, News.status == 'published'
+    ).offset(skip).limit(limit)
     result = await db.execute(stmt)
     news_list = result.scalars().all()
 
