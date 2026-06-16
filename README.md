@@ -1,114 +1,381 @@
-# 📰 FastAPI 新闻 APP
+# 新闻资讯 App
 
-<div align="center">
-
-![FastAPI](https://img.shields.io/badge/FastAPI-0.100+-009688?style=for-the-badge&logo=fastapi&logoColor=white)
-![Python](https://img.shields.io/badge/Python-3.10+-3776AB?style=for-the-badge&logo=python&logoColor=white)
-![MySQL](https://img.shields.io/badge/MySQL-8.0-4479A1?style=for-the-badge&logo=mysql&logoColor=white)
-![Redis](https://img.shields.io/badge/Redis-7.0-DC382D?style=for-the-badge&logo=redis&logoColor=white)
-![License](https://img.shields.io/badge/License-MIT-yellow.svg?style=for-the-badge)
-
-一个基于 **FastAPI + SQLAlchemy 2.0 + MySQL + Redis** 构建的高性能异步新闻后端 API 服务。
-
-[✨ 功能](#-功能)
-·
-[🚀 快速开始](#-快速开始)
-·
-[📖 API 文档](#-api-概览)
-·
-[🏗️ 架构](#-项目架构)
-·
-[📝 设计笔记](#-核心设计)
-
-</div>
+一个基于 **FastAPI + SQLAlchemy 2.0 + MySQL + Redis** 构建的高性能全异步新闻资讯后端，配套 **Vue 3 + Vant** 移动端。
+项目围绕“**用户认证 -> 新闻浏览 -> 收藏 / 历史 -> 找回密码**”构建了完整闭环，重点体现了我在 **异步 Web 开发、缓存设计、认证安全、工程化落地** 方面的能力。
 
 ---
 
-## 📋 目录
+## 项目简介
 
-- [✨ 功能](#-功能)
-- [🛠️ 技术栈](#️-技术栈)
-- [📁 项目结构](#-项目结构)
-- [🚀 快速开始](#-快速开始)
-- [📖 API 概览](#-api-概览)
-- [🏗️ 项目架构](#-项目架构)
-- [🔐 认证流程](#-认证流程)
-- [⚡ 缓存策略](#-缓存策略)
-- [🗄️ 数据库设计](#️-数据库设计)
-- [🧩 核心设计](#-核心设计)
-- [🆚 与 DRF 对比](#-与-django-drf-对比)
-- [📄 License](#-license)
+这是一个移动端新闻资讯应用，后端提供完整的内容浏览与用户体系：
+
+- 用户注册 / 登录后获得令牌，凭令牌访问受保护资源
+- 浏览新闻分类、分页列表与详情，热点数据走 Redis 缓存
+- 对新闻进行收藏、记录浏览历史，并支持分页与清空
+- 忘记密码时，通过“图形验证码 + 邮箱 / 短信验证码 + 一次性令牌”安全找回
+
+这个项目不是单一接口 Demo，而是一个包含 **全异步后端、关系型数据库、Redis 缓存、令牌认证、验证码与通知、前后端分离移动端** 的完整工程化项目。
 
 ---
 
-## ✨ 功能
+## 核心亮点
 
-| 模块 | 功能 | 认证要求 |
-|------|------|----------|
-| 🔐 **用户** | 注册、登录、获取信息、修改资料、修改密码 | 部分需要 |
-| 📰 **新闻** | 分类列表、分页新闻列表、新闻详情（浏览量 +1 + 相关推荐） | 无需认证 |
-| ⭐ **收藏** | 收藏/取消收藏、检查收藏状态、收藏列表、清空收藏 | 需要认证 |
-| 🕐 **历史** | 添加浏览历史、历史列表、删除/清空历史 | 需要认证 |
+### 1. 全链路异步
+
+后端从 Web 框架到数据库、缓存全部异步：
+
+- FastAPI + `aiomysql` + `redis.asyncio`，`async/await` 贯穿路由、CRUD、缓存
+- 通过 `yield` 依赖统一管理会话生命周期：正常提交、异常回滚、最终关闭
+- `expire_on_commit=False`，避免提交后在异步上下文中隐式触发额外 SQL
+
+### 2. Cache-Aside 缓存 + 主动失效
+
+热点读多写少的数据走 Redis 旁路缓存，而不是无脑查库：
+
+- 分类列表、新闻列表先查缓存，未命中再回源 MySQL 并回填
+- 分类列表缓存 2 小时、新闻列表缓存 30 分钟，详情不缓存以保证浏览量实时
+- 查看详情时浏览量原子 `+1`，并按分类用 `scan_iter` 精准失效该分类的列表缓存，避免脏数据
+
+相比“查库即返回”，这种方式显著降低数据库压力，又通过主动失效保证一致性。
+
+### 3. 数据库 Token 认证（而非 JWT）
+
+认证采用 **服务端存储 Token** 方案，安全更可控：
+
+- 注册 / 登录签发 UUID Token 入库（`user_token`，7 天过期，单用户单令牌）
+- `get_current_user` 依赖从 `Authorization: Bearer <token>` 解析并校验有效期
+- 相比 JWT，可随时失效、改密后旧令牌自然作废，无需维护黑名单
+
+### 4. 完整的找回密码安全闭环
+
+找回密码不是一个接口，而是一条带多重防护的链路：
+
+- 算术图形验证码（防脚本）-> 邮箱 / 短信验证码（防盗用）-> 一次性 `reset_token`（防重放）
+- 发送验证码做 60s 频控；用户不存在时也返回“已发送”，以防账号枚举
+- 邮件 / 短信为阻塞式网络调用，交给 `BackgroundTasks` 后台线程池执行，接口立即返回
+
+### 5. 密钥环境变量化
+
+所有敏感配置都迁出代码，便于安全提交与多环境部署：
+
+- 数据库 / Redis / 邮箱 / 阿里云短信密钥全部由 `.env` 提供
+- 自研零依赖 `load_env`（`os.environ.setdefault`，不覆盖已有环境变量）
+- `.env` 已 gitignore，仅提交占位符模板 `.env.example`；未配置密钥时验证码自动回退控制台打印，便于本地调试
+
+### 6. 清晰分层 + 统一响应 / 异常
+
+项目体现了较完整的工程化思维：
+
+- `config / models / schemas / routers / crud / cache / utils` 七层分工明确
+- 统一 `{code, message, data}` 响应格式
+- 异常按 `HTTPException -> IntegrityError -> SQLAlchemyError -> Exception` 逐层兜底
 
 ---
 
-## 🛠️ 技术栈
+## 技术栈
 
-| 组件 | 选型 | 说明 |
-|------|------|------|
-| **Web 框架** | FastAPI | 高性能异步框架，自动生成 OpenAPI 文档 |
-| **ORM** | SQLAlchemy 2.0+ | Data Mapper 模式，支持异步操作 |
-| **数据库** | MySQL 8.0 | 关系型数据库 |
-| **数据库驱动** | aiomysql | 异步 MySQL 驱动，配合 asyncio 事件循环 |
-| **数据校验** | Pydantic v2 | 类型驱动的数据校验与序列化 |
-| **缓存** | Redis 7.0 | 热点数据缓存，减少数据库压力 |
-| **密码加密** | passlib + bcrypt | 自带盐值的密码哈希算法，抗暴力破解 |
-| **服务器** | uvicorn | ASGI 服务器，支持异步并发 |
+### 后端
+
+- FastAPI
+- SQLAlchemy 2.0（async）
+- Pydantic v2
+- Uvicorn（ASGI）
+
+### 数据与缓存
+
+- MySQL 8.0
+- aiomysql（异步驱动）
+- Redis 7.0（redis.asyncio）
+
+### 安全与通知
+
+- passlib + bcrypt（密码哈希）
+- 数据库 Token 认证
+- QQ 邮箱 SMTP（验证码邮件）
+- 阿里云短信 dypnsapi（验证码短信）
+
+### 前端
+
+- Vue 3 + Vite
+- Vant 4（移动端 UI）
+- Pinia（+ 持久化）
+- Vue Router
+- Vue I18n（中英文）
+- Axios、marked + DOMPurify
 
 ---
 
-## 📁 项目结构
+## 系统架构
 
+```text
+[Vue 3 + Vant 移动端]
+   ├─ 新闻浏览 / 分类
+   ├─ 收藏 / 历史
+   ├─ 登录注册 / 找回密码
+   └─ 个人中心 / 设置
+        │  HTTP（JSON，Bearer Token）
+        ▼
+[FastAPI 后端]
+   ├─ routers/   接口层：参数校验、组装响应
+   ├─ schemas/   Pydantic 请求 / 响应校验
+   ├─ crud/      数据操作层：先查缓存，再查库
+   ├─ cache/     Redis Key 管理与主动失效
+   ├─ utils/     认证 / 加密 / 验证码 / 统一响应 / 异常
+   └─ models/    SQLAlchemy ORM 模型
+        │                          │
+        ▼                          ▼
+   MySQL 8.0                  Redis 7.0
+   (aiomysql 异步)             (列表缓存 / 验证码 / 重置令牌)
+        ▲
+        │  后台任务（BackgroundTasks）
+        └─ QQ 邮箱 SMTP / 阿里云短信（找回密码验证码）
 ```
-FastAPI01/
-├── main.py                       # 🚀 应用入口：FastAPI 实例、中间件、路由注册
-├── config/                       # ⚙️  基础设施配置
-│   ├── db_conf.py                #   异步 MySQL 引擎 + 会话工厂 + 依赖注入
-│   └── cache_conf.py             #   异步 Redis 客户端 + 缓存读写工具
-├── models/                       # 🗄️ ORM 模型定义
-│   ├── users.py                  #   User 表 + UserToken 表
-│   ├── news.py                   #   Category 表 + News 表
-│   ├── favorite.py               #   Favorite 收藏关联表
-│   └── history.py                #   History 浏览历史表
-├── schemas/                      # ✅ Pydantic 请求/响应模型
-│   ├── base.py                   #   NewsItemBase 新闻基类
-│   ├── users.py                  #   用户注册/登录/信息响应
-│   ├── favorite.py               #   收藏请求/响应
-│   └── history.py                #   历史请求/响应
-├── routers/                      # 🌐 API 路由
-│   ├── users.py                  #   /api/user/*
-│   ├── news.py                   #   /api/news/*
-│   ├── favorite.py               #   /api/favorite/*
-│   └── history.py                #   /api/history/*
-├── crud/                         # 📦 数据操作层
-│   ├── users.py                  #   用户增删改查 + Token 管理 + 认证
-│   ├── news.py                   #   新闻查询 + 浏览量更新
-│   ├── news_cache.py             #   新闻查询（带 Redis 缓存）
-│   ├── favorite.py               #   收藏增删查
-│   └── history.py                #   历史增删查
-├── cache/                        # ⚡ 缓存 Key 管理
-│   └── news_cache.py             #   Redis Key 前缀 + 读写方法
-└── utils/                        # 🔧 工具层
-    ├── auth.py                   #   Token 认证依赖注入
-    ├── security.py               #   密码加密/验证
-    ├── response.py               #   统一 JSON 响应格式
-    ├── exception.py              #   各类异常处理函数
-    └── exception_handlers.py     #   异常处理器注册
+
+---
+
+## 业务流程
+
+### 1. 注册 / 登录
+
+1. 注册校验用户名唯一，密码经 bcrypt 加密后入库
+2. 登录校验用户名 + 密码
+3. 签发 7 天 UUID Token 写入 `user_token`（已存在则更新）
+4. 返回 `token` 与用户信息
+
+### 2. 新闻浏览（缓存命中链路）
+
+1. 分类 / 列表请求先查 Redis 缓存
+2. 命中直接返回；未命中查 MySQL 并回填缓存（带过期时间）
+3. 详情接口浏览量原子 `+1`（`update(News).values(views=News.views + 1)`）
+4. 失效该分类的列表缓存，并返回同分类相关推荐
+
+### 3. 收藏与历史
+
+1. 收藏：`UniqueConstraint(user_id, news_id)` 在数据库层防止重复收藏
+2. 历史：CRUD 层“存在则更新浏览时间、不存在则新建”，实现去重
+3. 两者均需 Token 认证，支持分页查询与一键清空
+
+### 4. 找回密码
+
+1. 获取算术图形验证码（`md5` 生成 `captchaId`，答案存 Redis 5 分钟）
+2. 提交联系方式（邮箱 / 手机号）+ 图形验证码，后台异步下发 6 位验证码
+3. 校验验证码通过后，换取一次性 `reset_token`（UUID，Redis 10 分钟）
+4. 携带 `reset_token` 提交新密码，完成重置
+
+---
+
+## 接口概览
+
+所有接口返回统一 JSON 格式：
+
+```json
+{
+  "code": 200,
+  "message": "success",
+  "data": { }
+}
+```
+
+### 用户 `/api/user`
+
+- `POST /register` — 注册（用户名唯一，返回 Token）· 无需认证
+- `POST /login` — 登录（返回 7 天 Token）· 无需认证
+- `GET /info` — 获取当前用户信息 · 需认证
+- `PUT /update` — 修改资料（昵称 / 头像 / 简介 / 性别 / 手机 / 邮箱）· 需认证
+- `PUT /password` — 修改密码（校验旧密码）· 需认证
+- `GET /captcha` — 获取算术图形验证码 · 无需认证
+- `POST /send_code` — 发送邮箱 / 短信验证码 · 无需认证
+- `POST /verify_code` — 校验验证码，换取 `reset_token` · 无需认证
+- `PUT /reset_password` — 凭 `reset_token` 重置密码 · 无需认证
+
+### 新闻 `/api/news`
+
+- `GET /categories` — 分类列表（缓存）· 无需认证
+- `GET /list?categoryId=&page=&pageSize=` — 分页新闻列表（缓存）· 无需认证
+- `GET /detail?id=` — 详情（浏览量 +1 + 相关推荐）· 无需认证
+
+### 收藏 `/api/favorite`（均需认证）
+
+- `GET /check?newsId=` — 检查是否已收藏
+- `POST /add` — 添加收藏
+- `DELETE /remove` — 取消收藏
+- `GET /list?page=&pageSize=` — 收藏列表（分页）
+- `DELETE /clear` — 清空收藏
+
+### 历史 `/api/history`（均需认证）
+
+- `POST /add` — 添加浏览记录（存在则更新时间）
+- `GET /list?page=&pageSize=` — 浏览历史（分页）
+- `DELETE /delete/{history_id}` — 删除单条历史
+- `DELETE /clear` — 清空历史
+
+---
+
+## 项目结构
+
+```text
+FastAPI项目练习/
+├─ main.py                       # 应用入口：FastAPI 实例、CORS、路由与异常注册
+├─ .env.example                  # 环境变量模板（占位符，可安全提交）
+├─ config/                       # 基础设施配置
+│  ├─ env.py                     #   零依赖 .env 加载器
+│  ├─ db_conf.py                 #   异步 MySQL 引擎 + 会话工厂 + get_db 依赖
+│  └─ cache_conf.py              #   异步 Redis 客户端 + 缓存读写工具
+├─ models/                       # SQLAlchemy ORM 模型
+│  ├─ base.py                    #   DeclarativeBase 基类
+│  ├─ users.py                   #   User + UserToken
+│  ├─ news.py                    #   Category + News
+│  ├─ favorite.py                #   Favorite 收藏表
+│  └─ history.py                 #   History 浏览历史表
+├─ schemas/                      # Pydantic 请求 / 响应模型
+│  ├─ base.py                    #   NewsItemBase 新闻基类
+│  ├─ users.py                   #   注册 / 登录 / 信息 / 改密
+│  ├─ favorite.py                #   收藏请求 / 响应
+│  ├─ history.py                 #   历史请求 / 响应
+│  └─ verification.py            #   发送 / 校验验证码、重置密码
+├─ routers/                      # API 路由
+│  ├─ users.py                   #   /api/user/*（含验证码、找回密码）
+│  ├─ news.py                    #   /api/news/*
+│  ├─ favorite.py                #   /api/favorite/*
+│  └─ history.py                 #   /api/history/*
+├─ crud/                         # 数据操作层
+│  ├─ users.py                   #   用户增删改查 + Token + 认证 + 改密 / 重置
+│  ├─ news.py                    #   新闻查询 + 浏览量原子更新 + 相关推荐
+│  ├─ news_cache.py              #   带 Redis 缓存的新闻 / 分类查询
+│  ├─ favorite.py                #   收藏增删查
+│  └─ history.py                 #   历史增删查（存在则更新时间）
+├─ cache/                        # 缓存 Key 管理
+│  └─ news_cache_redis.py        #   Key 前缀、读写、列表缓存主动失效
+└─ utils/                        # 工具层
+   ├─ auth.py                    #   Token 认证依赖（get_current_user）
+   ├─ security.py                #   bcrypt 密码加密 / 校验
+   ├─ captcha.py                 #   算术图形验证码
+   ├─ verification.py            #   邮箱 / 短信验证码、重置令牌
+   ├─ response.py                #   统一 JSON 响应
+   ├─ exception.py               #   各类异常处理函数
+   └─ exception_handlers.py      #   异常处理器注册
+
+xwzx-news/                       # Vue 3 + Vant 移动端
+├─ src/views/                    #   首页 / 分类 / 详情 / 收藏 / 历史 / 登录 / 找回密码 / 我的 / 设置 / AI 对话
+├─ src/store/                    #   Pinia：news / favorite / history / user / chat / theme / language
+├─ src/router/                   #   Vue Router 路由
+└─ src/i18n/                     #   中英文国际化
 ```
 
 ---
 
-## 🚀 快速开始
+## 工程化设计亮点
+
+### 分层清晰
+
+后端采用较清晰的分层：
+
+- `routers`：接口层，负责参数校验与响应组装
+- `schemas`：请求 / 响应模型与数据校验
+- `crud`：业务数据操作层，桥接路由与数据库 / 缓存
+- `models`：数据库 ORM 模型
+- `cache` / `utils`：缓存 Key 管理与认证、加密、验证码等横切关注点
+
+这样业务逻辑更集中，新闻、用户、收藏、历史、找回密码各模块可独立维护与扩展。
+
+### 异步会话与原子更新
+
+```python
+async def get_db():
+    async with AsyncSessionLocal() as session:
+        try:
+            yield session            # 交给路由函数
+            await session.commit()   # 正常 -> 提交
+        except Exception:
+            await session.rollback() # 异常 -> 回滚
+            raise
+        finally:
+            await session.close()    # 最终 -> 关闭
+```
+
+浏览量更新使用 SQL 表达式在数据库层原子自增，避免并发竞态：
+
+```python
+stmt = update(News).where(News.id == news_id).values(views=News.views + 1)
+```
+
+### Cache-Aside 与缓存失效
+
+| 数据类型 | 缓存 Key 示例 | 过期时间 | 原因 |
+|----------|---------------|----------|------|
+| 分类列表 | `news:categories` | 2 小时 | 分类很少变动 |
+| 新闻列表 | `news_list:1:1:10` | 30 分钟 | 半实时即可 |
+| 新闻详情 | 不缓存 | — | 浏览量需实时 +1 |
+
+- Key 采用 `:` 分层命名（如 `news_list:{分类}:{页}:{每页}`）
+- 浏览详情后按分类 `scan_iter` 匹配并删除对应列表缓存，保证一致性
+
+### 统一响应与分层异常处理
+
+- 所有接口经 `success_response` 返回统一 `{code, message, data}`
+- 异常处理器按继承关系从具体到通用逐层兜底：
+
+```text
+HTTPException（业务异常）   -> 400 / 401 / 404 等
+IntegrityError（约束冲突） -> 解析错误 -> 友好中文提示
+SQLAlchemyError（库异常）  -> 500 通用错误
+Exception（未知异常）      -> 500 兜底
+```
+
+### 密钥环境变量化（零依赖 .env）
+
+- 自研 `load_env` 解析项目根目录 `.env`，无需第三方依赖
+- 使用 `os.environ.setdefault`，已存在的同名环境变量不被覆盖
+- 文件缺失时静默跳过，验证码自动回退控制台打印，保证未配置密钥也能启动联调
+
+### Pydantic 驼峰 / 蛇形映射与按需更新
+
+```python
+class NewsItemBase(BaseModel):
+    category_id: int = Field(alias="categoryId")          # 前端 camelCase
+    publish_time: datetime = Field(None, alias="publishTime")
+    model_config = ConfigDict(from_attributes=True, populate_by_name=True)
+```
+
+修改资料时用 `model_dump(exclude_unset=True, exclude_none=True)`，只更新前端实际传入的字段，避免把未传字段误置为 `NULL`。
+
+### 数据模型
+
+```text
+┌──────────────┐        ┌──────────────┐
+│     User     │        │   Category   │   (news_category)
+├──────────────┤        ├──────────────┤
+│ id (PK)      │        │ id (PK)      │
+│ username (U) │        │ name (U)     │
+│ password     │        │ sort_order   │
+│ phone (U)    │        └──────┬───────┘
+│ email (U)    │               │
+│ nickname     │               │
+│ gender/bio.. │               ▼
+└──────┬───────┘        ┌──────────────┐
+       │                │     News     │
+       │  ┌─────────────┤ id (PK)      │
+       │  │             │ category_id  │
+       ▼  ▼             │ title/content│
+┌──────────────┐        │ views        │
+│  UserToken   │        │ publish_time │
+│ token (U)    │        └──────┬───────┘
+│ expires_at   │               │
+└──────────────┘     ┌─────────┴─────────┐
+                     ▼                   ▼
+              ┌──────────────┐    ┌──────────────┐
+              │   Favorite   │    │   History    │
+              │ user_id (FK) │    │ user_id (FK) │
+              │ news_id (FK) │    │ news_id (FK) │
+              │ (user+news U)│    │ view_time    │
+              └──────────────┘    └──────────────┘
+```
+
+关键索引：`user.username / phone / email` 唯一；`user_token.token` 唯一（每请求都校验）；`news.category_id`、`news.publish_time`（最频繁的查询与排序）；`favorite (user_id, news_id)` 联合唯一。
+
+---
+
+## 启动方式
 
 ### 环境要求
 
@@ -116,75 +383,38 @@ FastAPI01/
 - MySQL 8.0+
 - Redis 7.0+
 
-### 1. 克隆项目
+### 1. 配置环境变量
+
+复制模板并填入真实值（`.env` 不会被提交）：
 
 ```bash
-git clone https://github.com/yourusername/fastapi-news-app.git
-cd fastapi-news-app
+cp .env.example .env
 ```
 
-### 2. 安装依赖
+`.env` 涵盖数据库、Redis、QQ 邮箱 SMTP、阿里云短信等密钥。
+
+### 2. 安装依赖并建表
 
 ```bash
-pip install -r requirements.txt
+pip install fastapi "uvicorn[standard]" "sqlalchemy>=2.0" aiomysql "redis[hiredis]" "passlib[bcrypt]" "pydantic>=2.0" python-multipart
 ```
 
-核心依赖：
-```
-fastapi>=0.100.0
-uvicorn[standard]
-sqlalchemy>=2.0
-aiomysql
-redis[hiredis]
-passlib[bcrypt]
-pydantic>=2.0
-python-multipart
-```
-
-### 3. 配置数据库
-
-修改 `config/db_conf.py` 中的数据库连接信息：
+在 MySQL 中创建数据库后，用 SQLAlchemy 初始化表结构：
 
 ```python
-ASYNC_DATABASE_URL = "mysql+aiomysql://用户名:密码@主机:端口/数据库名?charset=utf8mb4"
-```
-
-修改 `config/cache_conf.py` 中的 Redis 连接信息：
-
-```python
-REDIS_HOST = 'localhost'
-REDIS_PORT = 6379
-REDIS_PASSWORD = 'your_password'
-```
-
-### 4. 创建数据库表
-
-```bash
-# 启动 MySQL 后，创建数据库
-mysql -u root -p -e "CREATE DATABASE IF NOT EXISTS news_app DEFAULT CHARACTER SET utf8mb4;"
-
-# 启动应用后，访问 /init 端点创建表（或使用 SQLAlchemy）：
-python -c "from models.users import Base, async_engine; import asyncio; asyncio.run(async_engine.connect())"
-```
-
-或者手动初始化：
-
-```python
-# 在 Python 交互环境中运行
-from models.users import Base as UserBase
-from models.news import Base as NewsBase
-from config.db_conf import async_engine
 import asyncio
+from config.db_conf import async_engine
+from models.base import Base
+import models.users, models.news, models.favorite, models.history  # 注册所有表
 
 async def init_db():
     async with async_engine.begin() as conn:
-        await conn.run_sync(UserBase.metadata.create_all)
-        await conn.run_sync(NewsBase.metadata.create_all)
+        await conn.run_sync(Base.metadata.create_all)
 
 asyncio.run(init_db())
 ```
 
-### 5. 启动服务
+### 3. 启动后端
 
 ```bash
 # 开发模式（热重载）
@@ -194,433 +424,17 @@ uvicorn main:app --host 0.0.0.0 --port 8000 --reload
 uvicorn main:app --host 0.0.0.0 --port 8000 --workers 4
 ```
 
-### 6. 访问 API 文档
+启动后访问交互式文档：
 
-启动后打开浏览器访问：
+- Swagger UI: http://localhost:8000/docs
+- ReDoc: http://localhost:8000/redoc
 
-- 🎨 **Swagger UI**: [http://localhost:8000/docs](http://localhost:8000/docs)
-- 📄 **ReDoc**: [http://localhost:8000/redoc](http://localhost:8000/redoc)
-- ✅ **健康检查**: [http://localhost:8000/](http://localhost:8000/)
+### 4. 启动前端
 
----
-
-## 📖 API 概览
-
-### 🔐 用户模块 `/api/user`
-
-| 方法 | 端点 | 说明 | 认证 |
-|------|------|------|------|
-| `POST` | `/register` | 用户注册 | ❌ |
-| `POST` | `/login` | 用户登录，返回 7 天有效 Token | ❌ |
-| `GET` | `/info` | 获取当前用户信息 | ✅ |
-| `PUT` | `/update` | 修改个人信息（昵称/头像/简介等） | ✅ |
-| `PUT` | `/password` | 修改密码（需旧密码验证） | ✅ |
-
-### 📰 新闻模块 `/api/news`
-
-| 方法 | 端点 | 说明 | 认证 |
-|------|------|------|------|
-| `GET` | `/categories` | 获取新闻分类列表 | ❌ |
-| `GET` | `/list?categoryId=1&page=1&pageSize=10` | 分页新闻列表 | ❌ |
-| `GET` | `/detail?id=123` | 新闻详情（浏览量+1 + 相关推荐） | ❌ |
-
-### ⭐ 收藏模块 `/api/favorite`
-
-| 方法 | 端点 | 说明 | 认证 |
-|------|------|------|------|
-| `GET` | `/check?newsId=1` | 检查某条新闻是否已收藏 | ✅ |
-| `POST` | `/add` | 添加收藏 | ✅ |
-| `DELETE` | `/remove?newsId=1` | 取消收藏 | ✅ |
-| `GET` | `/list?page=1&pageSize=10` | 收藏列表（分页） | ✅ |
-| `DELETE` | `/clear` | 清空所有收藏 | ✅ |
-
-### 🕐 历史模块 `/api/history`
-
-| 方法 | 端点 | 说明 | 认证 |
-|------|------|------|------|
-| `POST` | `/add` | 添加浏览记录（存在则更新时间） | ✅ |
-| `GET` | `/list?page=1&pageSize=10` | 浏览历史列表（分页） | ✅ |
-| `DELETE` | `/delete/{history_id}` | 删除单条历史记录 | ✅ |
-| `DELETE` | `/clear` | 清空所有历史记录 | ✅ |
-
-### 📦 统一响应格式
-
-所有接口返回统一 JSON 格式：
-
-```json
-{
-  "code": 200,
-  "message": "success",
-  "data": { ... }
-}
+```bash
+cd xwzx-news
+npm install
+npm run dev
 ```
 
-- `code`：业务状态码（200 表示成功）
-- `message`：人类可读的提示信息
-- `data`：实际的业务数据（可为 `null`）
-
----
-
-## 🏗️ 项目架构
-
-### 请求处理流程
-
-```
-客户端请求
-    │
-    ▼
-┌─────────────────────────────────────────────────┐
-│  main.py（CORS 中间件 + 异常处理器）               │
-└─────────────────────────────────────────────────┘
-    │
-    ▼
-┌─────────────────────────────────────────────────┐
-│  routers/（路由层）                                │
-│  接收请求 → 校验参数 → 调用 CRUD → 组装响应         │
-└─────────────────────────────────────────────────┘
-    │                    │
-    ▼                    ▼
-┌──────────────┐  ┌──────────────┐
-│  schemas/    │  │  utils/      │
-│  Pydantic    │  │  认证/加密    │
-│  数据校验     │  │  异常处理     │
-└──────────────┘  └──────────────┘
-    │
-    ▼
-┌─────────────────────────────────────────────────┐
-│  crud/（数据操作层）                               │
-│  封装 SQL 操作 → 先查 Redis 缓存 → 再查 MySQL       │
-└─────────────────────────────────────────────────┘
-    │                    │
-    ▼                    ▼
-┌──────────────┐  ┌──────────────┐
-│  models/     │  │  cache/       │
-│  SQLAlchemy  │  │  Redis Key    │
-│  ORM 模型     │  │  管理          │
-└──────────────┘  └──────────────┘
-    │                    │
-    ▼                    ▼
-   MySQL              Redis
-```
-
-### 分层职责
-
-| 层级 | 目录 | 职责 |
-|------|------|------|
-| **配置层** | `config/` | 数据库连接池、Redis 客户端等基础设施 |
-| **模型层** | `models/` | 定义数据库表结构（ORM 映射） |
-| **校验层** | `schemas/` | 定义 API 请求/响应的数据格式与校验规则 |
-| **路由层** | `routers/` | 定义 API 端点，组装请求参数和响应数据 |
-| **数据操作层** | `crud/` | 封装数据库 CRUD 操作，桥接路由与数据库 |
-| **缓存层** | `cache/` | 管理 Redis 缓存 Key 的读写 |
-| **工具层** | `utils/` | 认证、加密、响应格式化、异常处理等横切关注点 |
-
----
-
-## 🔐 认证流程
-
-本项目采用 **数据库存储 Token** 的认证方案（而非 JWT）。
-
-### 为什么不用 JWT？
-
-| 方案 | 优点 | 缺点 |
-|------|------|------|
-| **数据库 Token**（本项目） | 可随时失效、修改密码后旧 Token 自动作废 | 每次请求需查数据库 |
-| **JWT** | 无状态、不需要查数据库 | 无法主动失效（除非维护黑名单） |
-
-### 认证流程
-
-```
-注册/登录成功
-    │
-    ▼
-生成 UUID Token ──► 存入 user_token 表（7天过期）
-    │
-    ▼
-客户端存储 Token ──► 后续请求携带 Authorization: Bearer <token>
-    │
-    ▼
-get_current_user 依赖项：
-  ① 从请求头提取 Token
-  ② 查 user_token 表验证有效性
-  ③ 检查是否过期
-  ④ 查 user 表返回用户对象
-    │
-    ▼
-路由函数获得 User 对象
-```
-
-### 需要认证的接口写法
-
-```python
-from utils.auth import get_current_user
-
-@router.get("/info")
-async def get_user_info(user: User = Depends(get_current_user)):
-    # user 已是通过 Token 验证的用户对象
-    return success_response(data=UserInfoResponse.model_validate(user))
-```
-
-只需在路由函数参数中加上 `user: User = Depends(get_current_user)` 即可实现认证保护。
-
----
-
-## ⚡ 缓存策略
-
-采用 **Cache-Aside（旁路缓存）** 模式：
-
-```
-请求数据
-    │
-    ▼
-查 Redis 缓存
-    │
-    ├── 命中（Hit）──► 直接返回缓存数据
-    │
-    └── 未命中（Miss）
-        │
-        ▼
-    查 MySQL 数据库
-        │
-        ▼
-    写入 Redis 缓存（设置过期时间）
-        │
-        ▼
-    返回数据
-```
-
-### 缓存时间配置
-
-| 数据类型 | 缓存 Key 示例 | 过期时间 | 原因 |
-|----------|---------------|----------|------|
-| 分类列表 | `news:categories` | 2 小时 | 分类数据很少变动 |
-| 新闻列表 | `news_list:1:1:10` | 30 分钟 | 新闻更新较频繁，半实时即可 |
-| 新闻详情 | 不缓存 | — | 每次查看浏览量需要实时 +1 |
-
-### Redis Key 命名规范
-
-采用 `:` 分隔的层级命名结构：
-
-```
-news:categories              # 分类列表
-news_list:1:1:10             # 分类1，第1页，每页10条
-news_list:all:2:20           # 全部分类，第2页，每页20条
-```
-
----
-
-## 🗄️ 数据库设计
-
-### ER 图
-
-```
-┌──────────────┐       ┌──────────────┐
-│     User     │       │   Category   │
-├──────────────┤       ├──────────────┤
-│ id (PK)      │       │ id (PK)      │
-│ username (U) │       │ name (U)     │
-│ password     │       │ sort_order   │
-│ nickname     │       │ created_at   │
-│ avatar       │       │ updated_at   │
-│ gender       │       └──────┬───────┘
-│ bio          │              │
-│ phone (U)    │              │
-│ created_at   │              │
-│ updated_at   │              │
-└──────┬───────┘              │
-       │                      │
-       │  ┌───────────────────┘
-       │  │
-       ▼  ▼
-┌──────────────┐       ┌──────────────┐
-│  UserToken   │       │    News      │
-├──────────────┤       ├──────────────┤
-│ id (PK)      │       │ id (PK)      │
-│ user_id (FK) │       │ title        │
-│ token (U)    │       │ description  │
-│ expires_at   │       │ content      │
-│ created_at   │       │ image        │
-└──────────────┘       │ author       │
-                       │ category_id(FK)
-       ┌───────────────┤ views        │
-       │               │ publish_time │
-       │               │ created_at   │
-       │               │ updated_at   │
-       │               └──────┬───────┘
-       │                      │
-       ▼                      ▼
-┌──────────────┐       ┌──────────────┐
-│   Favorite   │       │   History    │
-├──────────────┤       ├──────────────┤
-│ id (PK)      │       │ id (PK)      │
-│ user_id (FK) │       │ user_id (FK) │
-│ news_id (FK) │       │ news_id (FK) │
-│ created_at   │       │ view_time    │
-│ (user+news U)│       └──────────────┘
-└──────────────┘
-```
-
-### 索引设计
-
-| 表 | 索引 | 用途 |
-|----|------|------|
-| User | `username_UNIQUE` | 加速用户名查询（登录/注册唯一性检查） |
-| User | `phone_UNIQUE` | 加速手机号查询 |
-| UserToken | `token_UNIQUE` | 加速 Token 验证（每次请求都需查） |
-| UserToken | `fk_user_token_user_idx` | 加速按用户查 Token |
-| News | `fk_news_category_idx` | 加速按分类查新闻（最频繁的查询） |
-| News | `idx_publish_time` | 加速按发布时间排序 |
-| Favorite | `user_news_unique` | 联合唯一约束 + 加速收藏状态查询 |
-| Favorite | `fk_favorite_user_idx` | 加速查询用户收藏列表 |
-| History | `fk_history_user_idx` | 加速查询用户历史 |
-| History | `idx_view_time` | 加速按浏览时间排序 |
-
----
-
-## 🧩 核心设计
-
-### 1. 异步数据库会话管理
-
-使用 FastAPI 的 `yield` 依赖注入管理数据库会话的完整生命周期：
-
-```python
-async def get_db():
-    async with AsyncSessionLocal() as session:
-        try:
-            yield session                    # 交给路由函数
-            await session.commit()           # 正常 → 提交
-        except Exception:
-            await session.rollback()         # 异常 → 回滚
-            raise
-        finally:
-            await session.close()            # 最终 → 关闭连接
-```
-
-> **关键设置：** `expire_on_commit=False` — commit 后 ORM 对象的属性保持有效，避免异步上下文中隐式触发额外 SQL 查询。
-
-### 2. 密码安全
-
-```python
-from passlib.context import CryptContext
-
-pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
-
-# 加密：每次生成不同的盐值，同一密码的哈希结果也不同
-def get_hash_password(password: str):
-    return pwd_context.hash(password)
-
-# 验证：从已有哈希中提取盐值后重算比较
-def verify_password(plain_password, hashed_password):
-    return pwd_context.verify(plain_password, hashed_password)
-```
-
-bcrypt 哈希示例：
-```
-$2b$12$LJ3m4ys3Lk0TSwMOPGDMZO5.jHxP3UYl8GYL3gMnNL.9tVPOkAG6
- ─┬─  ─┬─  ──────────────┬────────────── ──────┬──────
- 算法  成本     22位随机盐值                    哈希结果
-```
-
-### 3. 浏览量原子更新
-
-使用 SQL 表达式避免并发竞态条件：
-
-```python
-# ✅ 正确：数据库层面原子操作
-stmt = update(News).where(News.id == news_id).values(views=News.views + 1)
-await db.execute(stmt)
-
-# ❌ 错误：Python 层面计算，并发时可能丢失更新
-# news.views = news.views + 1
-```
-
-### 4. 统一异常处理
-
-按异常类型的继承关系从具体到通用逐层兜底：
-
-```
-HTTPException（业务异常）→ 400/401/404 等
-    ↓
-IntegrityError（约束冲突）→ 解析错误消息 → 友好中文提示
-    ↓
-SQLAlchemyError（数据库异常）→ 500 通用错误
-    ↓
-Exception（未知异常）→ 500 兜底
-```
-
-### 5. Pydantic 驼峰/蛇形命名映射
-
-前端（JavaScript/驼峰） ↔ 后端（Python/蛇形）自动转换：
-
-```python
-class NewsItemBase(BaseModel):
-    category_id: int = Field(alias="categoryId")    # JSON: categoryId
-    publish_time: datetime = Field(None, alias="publishTime")
-
-    model_config = ConfigDict(
-        from_attributes=True,    # 允许从 ORM 对象直接创建
-        populate_by_name=True    # 同时接受 category_id 和 categoryId
-    )
-```
-
-### 6. 批量更新时区分"未传"与"传了 None"
-
-```python
-# 前端只传了昵称
-{"nickname": "新昵称"}
-
-# CRUD 层使用 exclude_unset 只更新实际传了的字段
-user_data.model_dump(exclude_unset=True, exclude_none=True)
-# 结果：{"nickname": "新昵称"}  ← 不会把 avatar 等设成 NULL
-```
-
-### 7. 浏览历史去重
-
-收藏表用 `UniqueConstraint` 防止重复收藏，浏览历史表虽然不限制重复记录，但在 CRUD 层做了"存在则更新时间、不存在则新建"的处理：
-
-```python
-async def add_history(db, user_id, news_id):
-    existing = await db.execute(
-        select(History).where(History.user_id == user_id, History.news_id == news_id)
-    )
-    if history := existing.scalar_one_or_none():
-        history.view_time = datetime.now()  # 更新时间
-    else:
-        db.add(History(user_id=user_id, news_id=news_id))  # 新建
-    await db.commit()
-```
-
----
-
-## 🆚 与 Django DRF 对比
-
-| 维度 | Django DRF | FastAPI（本项目） |
-|------|------------|-------------------|
-| **异步支持** | 同步为主（4.1+ 部分异步） | ✅ **全异步** async/await |
-| **ORM** | Django ORM（Active Record） | SQLAlchemy 2.0（Data Mapper） |
-| **数据校验** | Serializer（校验+序列化耦合） | Pydantic（纯校验层，与 ORM 分离） |
-| **路由** | `urls.py` + ViewSet（集中配置） | 装饰器 + APIRouter（分散定义） |
-| **认证** | 自定义 Authentication 类 | `Depends(get_current_user)` 函数组合 |
-| **密码加密** | 需手动集成 | passlib + bcrypt（自带盐值） |
-| **API 文档** | 需额外安装 drf-spectacular | ✅ **自动生成** `/docs` + `/redoc` |
-| **依赖注入** | ❌ 无内置支持 | ✅ 强大的 `Depends` 系统 |
-| **分页** | PageNumberPagination（全局自动） | 手动 offset/limit（更灵活） |
-| **缓存** | django-redis（高集成度） | redis.asyncio（底层封装） |
-| **数据库驱动** | mysqlclient（同步） | aiomysql（异步非阻塞） |
-| **并发性能** | 中等 | ✅ **极高**（接近 Go/Node.js） |
-
----
-
-## 📄 License
-
-本项目基于 [MIT License](LICENSE) 开源。
-
----
-
-<div align="center">
-
-### ⭐ 如果这个项目对你有帮助，欢迎 Star！
-
-**技术栈**: FastAPI · SQLAlchemy 2.0 · MySQL · Redis · Pydantic v2 · bcrypt
-
-</div>
+> 说明：实际运行前需补充 `.env` 配置（数据库、Redis、邮箱、短信等）。未配置邮箱 / 短信密钥时，验证码会自动回退到控制台打印，方便本地联调。
