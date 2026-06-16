@@ -10,11 +10,11 @@ from models.base import Base
 class User(Base):
     __tablename__ = "user"
 
-    __table__args = {
+    __table__args = (
         Index('username_UNIQUE', 'username'),
         Index('phone_UNIQUE', 'phone'),
         Index('email_UNIQUE', 'email'),
-    }
+    )
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True, comment='用户ID')
     username: Mapped[str] = mapped_column(String(50), unique=True, nullable=False, comment='用户名')

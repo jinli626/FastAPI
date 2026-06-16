@@ -1,5 +1,5 @@
-# 使用官方 Python 3.12 slim 作为基础镜像
-FROM python:3.12-slim
+# 使用官方 Python 3.12 slim 作为基础镜像 使用DaoCloud加速镜像 Python 3.12 slim
+FROM m.daocloud.io/docker.io/python:3.12-slim
 
 # 设置工作目录
 WORKDIR /app
@@ -29,13 +29,14 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     g++ \
     pkg-config \
     default-libmysqlclient-dev \
+    default-jdk \
     && rm -rf /var/lib/apt/lists/*
 
 # 先拷贝依赖文件并安装，充分利用 Docker 层缓存
 COPY requirements.txt .
 RUN pip config set global.index-url ${PIP_INDEX_URL} \
     && pip config set global.trusted-host ${PIP_TRUSTED_HOST} \
-    && pip install --no-cache-dir --upgrade pip \
+    && pip install --no-cache-dir --upgrade pip cython \
     && pip install --no-cache-dir -r requirements.txt
 
 # 拷贝应用代码

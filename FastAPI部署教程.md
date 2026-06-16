@@ -78,6 +78,44 @@ sudo systemctl enable ssh
 sudo reboot
 ```
 
+> 报错如何解决： 错误:1 http://mirrors.tuna.tsinghua.edu.cn/ubuntu   清华源返回 403 禁止访问 
+>
+> ★ 换源即可解决，按顺序执行下面命令：https://www.doubao.com/thread/x8fccc25a6edb8145b3a526a8df4a5418
+
+1.备份原有源文件 
+
+```bash
+sudo cp /etc/apt/sources.list /etc/apt/sources.list.bak
+```
+
+2.替换为 Ubuntu 官方源
+
+```bash
+sudo tee /etc/apt/sources.list << EOF
+deb http://archive.ubuntu.com/ubuntu/ jammy main restricted universe multiverse
+deb http://archive.ubuntu.com/ubuntu/ jammy-updates main restricted universe multiverse
+deb http://archive.ubuntu.com/ubuntu/ jammy-security main restricted universe multiverse
+deb http://archive.ubuntu.com/ubuntu/ jammy-backports main restricted universe multiverse
+EOF
+```
+
+> 注意：手动输入的时候要原封不动地输入 不能带任何符号 比如"<"  改完记得拍快照 命名为"替换为 Ubuntu 官方源"
+
+3.更新软件源并修复依赖
+
+```bash
+sudo apt update
+sudo apt --fix-broken install -y
+```
+
+4.再次验证安装 
+
+```bash
+sudo apt install -y openssh-server curl open-vm-tools open-vm-tools-desktop
+```
+
+> 先执行：sudo apt install net-tools  然后ifconfig
+
 查看 VM IP：
 
 ```bash
@@ -108,26 +146,27 @@ Ubuntu 中挂载：
 
 ```bash
 sudo mkdir -p /mnt/hgfs
-sudo vmhgfs-fuse .host:/ /mnt/hgfs -o allow_other,nonempty
+sudo vmhgfs-fuse .host:/ /mnt/hgfs -o allow_other
 ```
 
 验证（看到项目内容即成功）：
 
 ```bash
-cd /mnt/hgfs/FastAPI项目练习/news-info-backend
+cd /mnt/hgfs/news-info/news-info-backend
 ls
 ```
 
-> 下文统一用 `/mnt/hgfs/FastAPI项目练习/news-info-backend` 作为后端目录，若你的共享目录名不同，请自行替换。
+> 下文统一用 `/mnt/hgfs/news-info/news-info-backend` 作为后端目录，若你的共享目录名不同，请自行替换。
 
 ---
 
 ## 三、安装 Docker 和 Docker Compose（为构建镜像和启动容器做准备）
 
-### 1. 安装 Docker（含 Compose V2 插件，最省心）
+### 1. 安装 Docker
 
 ```bash
-curl -fsSL https://get.docker.com | sudo bash
+sudo apt-get update
+sudo apt-get install -y docker.io
 sudo systemctl start docker
 sudo systemctl enable docker
 sudo usermod -aG docker $USER
@@ -135,34 +174,50 @@ sudo usermod -aG docker $USER
 
 > 执行完 `usermod` 后需要重新登录 VM（退出 SSH 再重连）才能免 sudo 使用 docker。
 
-验证：
+### 2. 安装 Docker Compose V2
+
+Ubuntu 18.04 的 apt 源中 docker-compose 版本太旧（1.17），不支持本项目的配置语法。需要手动安装新版。
+
+**安装方法：从项目中复制（作者已提供二进制文件）**
+
+项目目录中已包含 `docker-compose-linux-x86_64` 文件，直接复制即可：
 
 ```bash
-docker --version
-docker compose version   # 能显示版本号即说明 Compose V2 已就绪
+sudo cp /mnt/hgfs/news-info/news-info-backend/docker-compose-linux-x86_64 /usr/local/bin/docker-compose
+sudo chmod +x /usr/local/bin/docker-compose
 ```
 
-> 注意：本项目用的是 Docker Compose **V2**，命令是 `docker compose`（中间是空格），不是老版的 `docker-compose`。
-> 如果你的系统只有老版 `docker-compose`，把下文命令里的 `docker compose` 改成 `docker-compose` 即可。
+> 如果系统中已有旧版 docker-compose，先卸载：`sudo apt-get remove -y docker-compose`，然后执行 `hash -r` 刷新命令缓存。
 
-### 2. 配置 Docker 镜像加速（必须，否则国内拉不到镜像）
+```bash
+docker-compose --version
+```
+
+应显示 **Docker Compose version v2.24.0**
+
+### 3.配置 Docker 镜像加速
+
+> （必须，否则无法拉取镜像），国内网络无法直接访问 Docker Hub，必须配置镜像加速：
 
 ```bash
 sudo mkdir -p /etc/docker
 
 sudo tee /etc/docker/daemon.json <<-'EOF'
 {
-  "registry-mirrors": [
-    "https://docker.1ms.run",
-    "https://docker.xuanyuan.me",
-    "https://docker.m.daocloud.io"
-  ]
+    "registry-mirrors": [
+        "https://docker.1ms.run",
+        "https://docker.1panel.live",
+        "https://docker.m.ixdev.cn",
+        "https://hub.rat.dev",
+        "https://docker.xuanyuan.me"
+    ]
 }
 EOF
-
 sudo systemctl daemon-reload
 sudo systemctl restart docker
 ```
+
+> 换镜像源的网站：https://status.1panel.top/   参考资料：https://bbs.fit2cloud.com/t/topic/5886
 
 ---
 
@@ -189,25 +244,115 @@ sudo nmcli con up "有线连接 1"
 
 **如果系统使用 netplan（Ubuntu Server 常见）：**
 
-```bash
-sudo nano /etc/netplan/01-netcfg.yaml
+> sudo apt install -y vim 
+
+1.编辑Netplan配置文件
+
+方法一：
+
+```shell
+sudo vim /etc/netplan/01-network-manager-all.yaml 
 ```
+
+或者直接FinalShell打开
+
+```sheel
+sudo chmod 777 01-network-manager-all.yaml 
+```
+
+复制下列配置格式到01-network-manager-all.yaml
+
+需要变动2个选项
+
+- ens33下的addresses
+
+  - ![image-20260116201958436](C:/Users/刘祥兴/Desktop/Linux/Linux/static/imgs/image-20260116201958436.png)
+  - 虚拟网络编辑器
+  - ![image-20260116202028742](C:/Users/刘祥兴/Desktop/Linux/Linux/static/imgs/image-20260116202028742.png)
+
+  - addresses中的ip前3必须和NAT保持一致：192.168.x.y/24
+  - x和NAT中的一致
+  - y自己定，不要选0,255，物理机相同的数
+
+- ens33下的gateway4
+
+  - 固定192.168.x.2
+  - x和NAT一样
 
 ```yaml
 network:
+  version: 2  # Netplan 版本（固定为 2）
+  renderer: NetworkManager  # 显式指定使用 NetworkManager（可选，但推荐）
+  ethernets:
+    ens33:  # 替换为你的实际网卡名称（通过 ifconfig 查看）
+      dhcp4: no  # 禁用 DHCP，启用静态 IP（必须）
+      addresses: 
+        - 192.168.16.99/24  # 静态 IP + 子网掩码（24 对应 255.255.255.0）
+      gateway4: 192.168.16.2  # 网关
+      nameservers:  # DNS 服务器（用于解析域名）
+          addresses: [114.114.114.114, 8.8.8.8]  # 国内常用 DNS（可选替换为其他）
+```
+
+方法二：
+
+> 解决办法（直接用一键写入命令，彻底避免格式问题）
+>
+> 不用再手动复制粘贴了，直接在终端执行下面这条命令，就能把格式完全正确的配置一次性写入文件
+
+```bash
+sudo tee /etc/netplan/01-network-manager-all.yaml <<-'EOF'
+# Let NetworkManager manage all devices on this system
+network:
   version: 2
+  renderer: NetworkManager
   ethernets:
     ens33:
       dhcp4: no
       addresses:
-        - 你的IP/24
-      gateway4: 网关IP
+        - 192.168.248.99/24
+      routes:
+        - to: default
+          via: 192.168.248.2
       nameservers:
-        addresses: [8.8.8.8, 114.114.114.114]
+        addresses:
+          - 114.114.114.114
+          - 8.8.8.8
+EOF
 ```
 
-```bash
+![1781500570607](C:\Users\刘祥兴\AppData\Roaming\Typora\typora-user-images\1781500570607.png)
+
+网络适配器改为NAT模式
+
+2.应用配置
+
+```shell
 sudo netplan apply
+```
+
+> ★ 注意： 执行 `sudo netplan apply` 时，系统会**重新配置网络接口**   连接会突然断开
+>
+> 答疑链接：https://www.doubao.com/thread/xc9e3824487aa8f8fa76ad1f0aa4968bf
+
+- 恢复连接的方法
+
+1. **关闭当前断开的 SSH 窗口**，重新打开 FinalShell
+2. 新建一个连接，用**新的静态 IP `192.168.248.99`** 连接你的虚拟机
+3. 输入你的用户名和密码，就能重新连上了
+
+- 为什么会断开？
+
+   你执行 `sudo netplan apply` 时，系统会**重新配置网络接口**：
+
+1. 你的旧 IP `192.168.248.131` 会被断开
+2. 新配置的静态 IP `192.168.248.99` 会生效
+3. 配置生效的瞬间，SSH 连接就会被强制断开，这是完全正常的
+
+3.测试
+
+```shell
+ifconfig查看ens33已经改变
+ping www.baidu.com
 ```
 
 ---
@@ -217,7 +362,7 @@ sudo netplan apply
 进入后端目录，复制环境变量模板：
 
 ```bash
-cd /mnt/hgfs/FastAPI项目练习/news-info-backend
+cd /mnt/hgfs/news-info/news-info-backend
 cp .env.docker.example .env
 nano .env
 ```
@@ -246,16 +391,50 @@ nano .env
 
 ## 六、构建镜像并启动后端服务
 
+> ★ 注意requirements.txt只需要包含项目所需的依赖 多余的不需要 否则会影响构建镜像的速度
+
+### Q：输入什么命令才能提取准确的requirements.txt 
+
+#### A：用 `pipreqs` 自动提取（不会包含无关依赖）
+
+这个工具只会扫描你项目代码里 `import` 过的库，自动生成 `requirements.txt`，不会把虚拟环境里所有库都导出来。
+
+1. **安装 `pipreqs`**
+
+   ```powershell
+   pip install pipreqs
+   ```
+
+2. **进入你的项目目录**
+
+   ```
+   cd D:\项目练习\FastAPI项目练习\news-info-backend
+   ```
+
+3. **生成 `requirements.txt`**
+
+   ```
+   pipreqs . --encoding=utf8 --force
+   ```
+
+   - `.` 表示在当前目录生成
+   
+   - `--force` 表示如果文件已存在则覆盖
+   
+   - `--encoding=utf8` 避免中文乱码
+   
+     > ★ 注意：要用claude模型检查一些依赖是否正确  缺了什么 少了什么 多了什么 并进行修改
+
 进入后端目录：
 
 ```bash
-cd /mnt/hgfs/FastAPI项目练习/news-info-backend
+cd /mnt/hgfs/news-info/news-info-backend
 ```
 
 构建并启动（用基础配置即可，会把后端暴露在 `0.0.0.0:8000`，方便 Windows 前端访问）：
 
 ```bash
-sudo docker compose up -d --build
+sudo docker-compose up -d --build
 ```
 
 > 说明：项目里还有一个 `docker-compose.prod.yml`，那是**正式上线**用的（后端只绑 127.0.0.1、由 nginx 反代）。
@@ -264,7 +443,7 @@ sudo docker compose up -d --build
 查看容器：
 
 ```bash
-sudo docker compose ps
+sudo docker-compose ps
 ```
 
 正常应看到 3 个容器都是 `running / healthy`：
@@ -284,7 +463,7 @@ news-info-redis
 ### 1. 建表 + 创建默认管理员
 
 ```bash
-sudo docker compose exec app python scripts/init_db.py
+sudo docker-compose exec app python scripts/init_db.py
 ```
 
 默认后台管理员（创建完成后请尽快修改密码）：
@@ -297,13 +476,13 @@ sudo docker compose exec app python scripts/init_db.py
 ### 2. 执行幂等迁移（补充 news.status 列）
 
 ```bash
-sudo docker compose exec app python scripts/run_migration.py
+sudo docker-compose exec app python scripts/run_migration.py
 ```
 
 ### 3. 检查数据表是否创建成功
 
 ```bash
-sudo docker compose exec mysql sh -c 'mysql -uroot -p"$MYSQL_ROOT_PASSWORD" news_app -e "show tables;"'
+sudo docker-compose exec mysql sh -c 'mysql -uroot -p"$MYSQL_ROOT_PASSWORD" news_app -e "show tables;"'
 ```
 
 正常会看到这些表：
@@ -426,26 +605,38 @@ docker info
 测试拉取（拉取速度快代表成功）：
 
 ```bash
-sudo docker pull python:3.12-slim
-sudo docker pull mysql:8.0
-sudo docker pull redis:7-alpine
+sudo docker pull m.daocloud.io/docker.io/python:3.12-slim
+sudo docker pull m.daocloud.io/docker.io/mysql:8.0
+sudo docker pull m.daocloud.io/docker.io/redis:7-alpine
 ```
 
+> 彻底重置 Docker 构建环境： sudo docker system prune -a 
+>
+> 最后要： sudo docker-compose up -d --build  
+>
+> ★ 要在对应文件修改名称 eg：FROM m.daocloud.io/docker.io/python:3.12-slim
+
 如果仍失败，换镜像加速地址或配置 HTTP 代理。
+
+https://www.doubao.com/thread/x26583b077aa48af29410abdf35abf5ec
+
+https://www.doubao.com/thread/x6004e3f607f488e8a406e9d5cc82994d
+
+![1781594038301](C:\Users\刘祥兴\AppData\Roaming\Typora\typora-user-images\1781594038301.png)
 
 ### 2. 数据表不存在 / 接口报表不存在
 
 重新执行建表与迁移：
 
 ```bash
-sudo docker compose exec app python scripts/init_db.py
-sudo docker compose exec app python scripts/run_migration.py
+sudo docker-compose exec app python scripts/init_db.py
+sudo docker-compose exec app python scripts/run_migration.py
 ```
 
 检查表：
 
 ```bash
-sudo docker compose exec mysql sh -c 'mysql -uroot -p"$MYSQL_ROOT_PASSWORD" news_app -e "show tables;"'
+sudo docker-compose exec mysql sh -c 'mysql -uroot -p"$MYSQL_ROOT_PASSWORD" news_app -e "show tables;"'
 ```
 
 ### 3. 后端连不上数据库（Connection refused / Access denied）
@@ -455,8 +646,8 @@ sudo docker compose exec mysql sh -c 'mysql -uroot -p"$MYSQL_ROOT_PASSWORD" news
 2. 确认 DB_PASSWORD 与 REDIS_PASSWORD 是第一次启动时设置的值
    —— 这两个值在 mysql/redis 容器“第一次创建”时写入数据卷，后面改 .env 不会自动改卷里的密码
 3. 若中途改过密码，需重建数据卷：
-   sudo docker compose down -v   # 注意：-v 会清空数据库数据！
-   sudo docker compose up -d --build
+   sudo docker-compose down -v   # 注意：-v 会清空数据库数据！
+   sudo docker-compose up -d --build
 ```
 
 ### 4. 前端请求后端失败
@@ -481,15 +672,116 @@ sudo ufw reload
 ### 5. 修改 .env 后让配置生效
 
 ```bash
-sudo docker compose down
-sudo docker compose up -d --build
+sudo docker-compose down
+sudo docker-compose up -d --build
 ```
 
 ### 6. 查看后端日志（排错首选）
 
 ```bash
-sudo docker compose logs -f app
+sudo docker-compose logs -f app
 ```
+
+### 7. 使用docker拉取MySQL镜像很慢或者总是超时
+
+> 解决方法：https://blog.csdn.net/Really_gxy/article/details/145591987
+
+但是还会报错，如图
+
+![1781536561946](C:\Users\刘祥兴\AppData\Roaming\Typora\typora-user-images\1781536561946.png)
+
+出错原因以及解决方法：https://www.doubao.com/thread/x793237dc4d2e83148252cf38985f7edf
+
+重点看第一步：强制修复 DNS（核心必做）
+
+复制整条命令执行，覆盖系统 DNS 配置，使用国内稳定公共 DNS
+
+```bash
+sudo tee /etc/resolv.conf <<-'EOF'
+nameserver 223.5.5.5
+nameserver 114.114.114.114
+nameserver 8.8.8.8
+EOF
+```
+
+ 验证解析是否恢复正常： 
+
+```bash
+nslookup baidu.com
+```
+
+ 能返回 IP 代表 DNS 修复完成
+
+最后再执行：
+
+```bash
+docker pull m.daocloud.io/docker.io/mysql:8
+```
+
+后面有什么相同类型的报错
+
+都用：docker pull m.daocloud.io/docker.io/...前缀
+
+比如：docker pull m.daocloud.io/docker.io/python:3.12-slim
+
+> 先单独下载好 Python 镜像，再执行 compose 构建，避免构建时临时下载超时
+
+> ★★★ 非常重要的一步：
+>
+> 在docker-compose.yaml里面将image: mysql:8 改为 image: m.daocloud.io/docker.io/mysql:8
+
+### 8. 版本不兼容，pip依赖解析失败 
+
+>  一次性列出所有问题 + 完整修正后的 requirements.txt 
+
+##### eg：现存 4 个致命问题
+
+1. **ConfigParser 仅 Python2 库，Python3 内置 configparser，包名冲突无法安装**
+
+2. **HTMLParser==0.0.2 是废弃冷门包，Python3 自带 html.parser 标准库，没必要安装**
+
+3. **thread==2.0.6 为 Python2 旧库，Python3 用内置_thread，此包会报错**
+
+4. 已修复：docutils==0.22 兼容 Sphinx==9.1.0；已删除 xmlrpclib；无 jnius 冲突
+
+    修正完成、无冲突可用完整清单（直接全替换你的文件） 
+
+   ```txt
+   aliyun_python_sdk_core==2.16.0
+   attr==0.3.2
+   contextlib2==21.6.0
+   cryptography==49.0.0
+   docutils==0.22
+   fastapi==0.137.0
+   importlib_metadata==8.7.1
+   ipython==8.12.3
+   ...
+   ```
+
+   > https://www.doubao.com/thread/xa75648a5361986d89bf0c09ff1436569
+
+![1781596107140](C:\Users\刘祥兴\AppData\Roaming\Typora\typora-user-images\1781596107140.png)
+
+- 这是什么意思 这六个 
+
+> 解答：https://www.doubao.com/thread/x3643b6ad16af8c7299f2df3ec0f09d3f
+
+### 9. 后端启动时报 No module named 'cache'
+
+> 解决方案：https://www.doubao.com/thread/xc5ca80a5673b8fb9a4764534c4bea4a6
+
+最后执行：
+
+```bash
+sudo docker-compose down 
+sudo docker-compose up -d --build 
+```
+
+### 10. 部署完之后 发现之前的代码报错 
+
+解决方案：在编译器改完之后 在VM中执行：docker-compose up -d --build  重启后端 
+
+改完的代码即可生效
 
 ---
 
@@ -503,10 +795,10 @@ cd /mnt/hgfs/FastAPI项目练习/news-info-backend
 cp .env.docker.example .env
 nano .env                       # 改 DB_PASSWORD、REDIS_PASSWORD（其余可选）
 
-sudo docker compose up -d --build
+sudo docker-compose up -d --build
 
-sudo docker compose exec app python scripts/init_db.py
-sudo docker compose exec app python scripts/run_migration.py
+sudo docker-compose exec app python scripts/init_db.py
+sudo docker-compose exec app python scripts/run_migration.py
 
 curl http://localhost:8000/     # 返回 {"message":"Hello FastAPI"} 即成功
 ```
@@ -539,3 +831,183 @@ npm run dev
 后端健康：http://VM的IP:8000/
 后端接口文档：http://VM的IP:8000/docs
 ```
+
+------
+
+## 十二、取消部署命令汇总
+
+### 1. 后端（VM 虚拟机内执行，项目目录不变）
+
+先进入后端项目根目录
+
+```bash
+cd /mnt/hgfs/news-info/news-info-backend
+```
+
+#### ① 临时停止服务（保留容器、数据库数据，可快速重启）
+
+```bash
+sudo docker-compose stop
+```
+
+恢复上线：`sudo docker-compose up -d --build`
+
+#### ② 销毁容器 / 网络（保留数据库持久化数据，常用重置）
+
+```bash
+sudo docker-compose down
+```
+
+#### ③ 彻底清理部署（删除容器、镜像、全部数据库数据，不可逆）
+
+> 操作前建议先备份数据库，所有用户、收藏数据会全部清空
+
+```bash
+sudo docker-compose down -v --rmi all --remove-orphans
+```
+
+#### 补充：单独停止 / 重启后端应用容器（不影响 Redis、MySQL）
+
+```bash
+# 仅停止后端服务
+sudo docker-compose stop app
+# 重启后端加载新代码
+sudo docker-compose up -d --build app
+```
+
+------
+
+### 2. 前端（Windows 本地终端）
+
+#### 用户端停止
+
+1. 找到运行 `npm run dev` 的终端窗口
+2. 快捷键 `Ctrl + C` 终止前端开发服务
+
+#### 管理端停止
+
+1. 找到运行管理端的终端窗口
+2. 快捷键 `Ctrl + C` 终止开发服务
+
+#### 彻底清理前端依赖（可选，后续重新 install）
+
+```bash
+# 用户端清理
+cd news-info-frontend
+rmdir /s /q node_modules package-lock.json
+
+# 管理端清理
+cd news-info-admin
+rmdir /s /q node_modules package-lock.json
+```
+
+------
+
+### 3. 完整永久下线整套项目（全流程）
+
+​    1.执行后端彻底清理命令：
+
+```
+cd /mnt/hgfs/news-info/news-info-backend
+sudo docker-compose down -v --rmi all --remove-orphans
+```
+
+​    2.Windows 端关闭所有前端 `npm run dev` 终端
+
+​    3.额外线上收尾（云服务器公网部署时）
+
+- 删除域名解析记录，禁止外网访问
+- 若做过 ICP 备案，前往云厂商后台注销网站备案
+- 不需要服务器时，在云控制台释放 ECS 实例停止扣费
+
+------
+
+### 4. 查看容器运行状态完整命令
+
+#### 1. 基础查看：列出**正在运行**的容器
+
+在 VM 虚拟机终端执行：
+
+```bash
+sudo docker ps
+```
+
+判断规则：
+
+- 有 `news-info-app`、`news-info-mysql`、`news-info-redis` 出现 → 容器**还在运行**，没关闭
+- 列表空白 / 无这三个容器 → 容器已经停止并销毁
+
+#### 2. 查看所有容器（包含已停止的）
+
+如果执行 `docker-compose down` 后想确认旧容器是否彻底删除：
+
+```bash
+sudo docker ps -a
+```
+
+- `-a` 参数：显示全部容器（运行中 + 已停止）
+- 看不到 `news-info-xxx` 相关容器 = 彻底销毁成功
+
+#### 3. 只看你项目的容器（精准过滤，推荐）
+
+进入后端项目目录后执行，只筛选当前 compose 管理的容器：
+
+```bash
+cd /mnt/hgfs/FastAPI项目练习/news-info-backend
+sudo docker-compose ps
+```
+
+状态标识解读：
+
+- `Up xx seconds`：正在运行
+- `Exited (0) x minutes ago`：已停止但未删除
+- 无任何输出：容器全部销毁干净
+
+#### 4. 实时查看后端日志（辅助验证服务是否关停）
+
+```bash
+sudo docker logs -f news-info-app
+```
+
+- 报错 `No such container` = 后端容器已删除
+- 持续输出日志 = 容器仍在后台运行
+
+------
+
+#### 配套操作对照
+
+1. 执行 
+
+   ```bash
+   sudo docker-compose stop
+   ```
+
+   ```bash
+   docker ps
+   ```
+
+    看不到容器，
+
+   ```
+   docker ps -a
+   ```
+
+    还能看到（只是停止，未删除）
+
+2. 执行 
+
+   ```bash
+   sudo docker-compose down
+   ```
+
+    后：
+
+   ```bash
+   docker ps
+   ```
+
+   ```bash
+   docker ps -a
+   ```
+
+    都看不到项目容器，完全关闭销毁

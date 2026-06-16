@@ -36,7 +36,7 @@ services:
 
   # MySQL 8 数据库
   mysql:
-    image: mysql:8.0
+    image: m.daocloud.io/docker.io/mysql:8
     container_name: news-info-mysql
     restart: unless-stopped
     command: --character-set-server=utf8mb4 --collation-server=utf8mb4_unicode_ci
@@ -58,7 +58,7 @@ services:
 
   # Redis 缓存
   redis:
-    image: redis:7-alpine
+    image: m.daocloud.io/docker.io/redis:7-alpine
     container_name: news-info-redis
     restart: unless-stopped
     command: redis-server --requirepass ${REDIS_PASSWORD} --appendonly yes

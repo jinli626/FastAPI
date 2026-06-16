@@ -11,7 +11,8 @@ export const useNewsStore = defineStore('news', {
     loading: false,
     refreshing: false,
     finished: false,
-    categoriesLoading: false
+    categoriesLoading: false,
+    isFetching: false
   }),
 
   actions: {
@@ -49,6 +50,10 @@ export const useNewsStore = defineStore('news', {
     },
 
     async getNewsList(isRefresh = false) {
+      // 防重入：onMounted 和 van-list 的 @load 会并发触发，
+      // 不加锁两次都会以 page=1 请求并各自追加，导致列表出现重复条目
+      if (this.isFetching) return
+      this.isFetching = true
       if (isRefresh) {
         this.refreshing = true
         this.newsList = []
@@ -74,6 +79,7 @@ export const useNewsStore = defineStore('news', {
       } finally {
         this.loading = false
         this.refreshing = false
+        this.isFetching = false
       }
     },
 

@@ -46,7 +46,7 @@
 </template>
 
 <script setup>
-import { ref, computed, onMounted, nextTick, watch } from 'vue';
+import { ref, computed, onMounted, onActivated, nextTick, watch } from 'vue';
 import TabBar from '../components/TabBar.vue';
 import { showToast } from 'vant';
 import * as marked from 'marked';
@@ -196,6 +196,12 @@ watch(() => chatStore.messages.length, () => {
 
 // 打开时滚到最新消息
 onMounted(() => {
+  nextTick(scrollToBottom);
+});
+
+// 从 keep-alive 缓存中被重新激活时也滚到底
+// （AI问答 ↔ 我的 都是 keepAlive 页面，互相切换不会触发 onMounted）
+onActivated(() => {
   nextTick(scrollToBottom);
 });
 </script>

@@ -19,10 +19,9 @@ ENV/
 *.swp
 *.swo
 
-# 日志与本地缓存
+# 日志
 logs/
 *.log
-cache/
 
 # 数据库 / 本地数据文件
 *.db

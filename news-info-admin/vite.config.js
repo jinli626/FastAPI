@@ -16,11 +16,11 @@ export default defineConfig({
     proxy: {
       // 开发环境下把 /api、/static 转发到 FastAPI 后端，规避跨域
       '/api': {
-        target: 'http://127.0.0.1:8000',
+        target: 'http://192.168.248.99:8000',
         changeOrigin: true,
       },
       '/static': {
-        target: 'http://127.0.0.1:8000',
+        target: 'http://192.168.248.99:8000',
         changeOrigin: true,
       },
     },
