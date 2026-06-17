@@ -29,11 +29,7 @@
         <img :src="newsStore.newsDetail.image" :alt="newsStore.newsDetail.title">
       </div>
       
-      <div class="content">
-        <p v-for="(paragraph, index) in contentParagraphs" :key="index">
-          {{ paragraph }}
-        </p>
-      </div>
+      <div class="content rich-text" v-html="sanitizedContent"></div>
       
       <div class="related-news" v-if="newsStore.newsDetail.relatedNews?.length">
         <h3>相关推荐</h3>
@@ -65,6 +61,7 @@ import { useHistoryStore } from '../store/modules/history'
 import { useFavoriteStore } from '../store/modules/favorite'
 import { useUserStore } from '../store/user'
 import { showToast } from 'vant'
+import DOMPurify from 'dompurify'
 
 const route = useRoute()
 const router = useRouter()
@@ -76,10 +73,10 @@ const userStore = useUserStore()
 // 获取路由参数中的新闻ID
 const newsId = computed(() => Number(route.params.id))
 
-// 将内容拆分为段落
-const contentParagraphs = computed(() => {
-  if (!newsStore.newsDetail.content) return []
-  return newsStore.newsDetail.content.split('\n\n').filter(p => p.trim())
+// 正文是富文本 HTML，用 DOMPurify 净化后再渲染，避免 XSS
+const sanitizedContent = computed(() => {
+  if (!newsStore.newsDetail.content) return ''
+  return DOMPurify.sanitize(newsStore.newsDetail.content)
 })
 
 // 返回上一页
@@ -231,11 +228,94 @@ watch(newsId, (newId) => {
   font-size: 16px;
   line-height: 1.8;
   color: #333;
+  word-break: break-word;
 }
 
-.content p {
-  margin-bottom: 16px;
+/* v-html 注入的内容不带 scoped 标记，需用 :deep() 命中 */
+.rich-text :deep(p) {
+  margin: 0 0 16px;
   text-align: justify;
+}
+
+.rich-text :deep(h1),
+.rich-text :deep(h2),
+.rich-text :deep(h3),
+.rich-text :deep(h4) {
+  font-weight: bold;
+  line-height: 1.4;
+  color: #1a1a1a;
+  margin: 28px 0 14px;
+}
+
+.rich-text :deep(h1) {
+  font-size: 24px;
+  padding-bottom: 10px;
+  border-bottom: 1px solid #ececec;
+}
+
+.rich-text :deep(h2) {
+  font-size: 20px;
+  padding-bottom: 8px;
+  border-bottom: 1px solid #f0f0f0;
+}
+
+.rich-text :deep(h3) {
+  font-size: 18px;
+}
+
+.rich-text :deep(h4) {
+  font-size: 16px;
+}
+
+.rich-text :deep(img),
+.rich-text :deep(video) {
+  max-width: 100%;
+  height: auto;
+  border-radius: 4px;
+  margin: 8px 0;
+}
+
+.rich-text :deep(hr) {
+  border: none;
+  border-top: 1px solid #eaeaea;
+  margin: 20px 0;
+}
+
+.rich-text :deep(ul),
+.rich-text :deep(ol) {
+  padding-left: 24px;
+  margin: 0 0 16px;
+}
+
+.rich-text :deep(li) {
+  margin-bottom: 8px;
+}
+
+.rich-text :deep(blockquote) {
+  margin: 0 0 16px;
+  padding: 8px 14px;
+  color: #666;
+  background: #f7f8fa;
+  border-left: 4px solid #dcdee0;
+  border-radius: 0 4px 4px 0;
+}
+
+.rich-text :deep(a) {
+  color: #1989fa;
+  text-decoration: none;
+  word-break: break-all;
+}
+
+.rich-text :deep(table) {
+  width: 100%;
+  border-collapse: collapse;
+  margin: 0 0 16px;
+}
+
+.rich-text :deep(th),
+.rich-text :deep(td) {
+  border: 1px solid #ebedf0;
+  padding: 6px 10px;
 }
 
 .related-news {
