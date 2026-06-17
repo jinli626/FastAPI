@@ -31,3 +31,9 @@ test.py
 
 # 忽略所有 npm 依赖包
 node_modules/
+
+# 忽略所有 Markdown 文件
+*.md
+
+# 忽略所有静态文件
+news-info-backend/static/
